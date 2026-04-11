@@ -15,7 +15,8 @@ interface BlockchainBadgeProps {
 }
 
 const BlockchainBadge = ({ hash, verified = true, showFull = false, className }: BlockchainBadgeProps) => {
-  const truncatedHash = showFull ? hash : `${hash.slice(0, 10)}...${hash.slice(-6)}`;
+  // Always truncate in the badge — full hash is shown in tooltip
+  const truncatedHash = `${hash.slice(0, 10)}...${hash.slice(-6)}`;
 
   return (
     <Tooltip>
@@ -23,7 +24,7 @@ const BlockchainBadge = ({ hash, verified = true, showFull = false, className }:
         <Badge
           variant="outline"
           className={cn(
-            'gap-1.5 font-mono text-xs',
+            'gap-1.5 font-mono text-xs max-w-full overflow-hidden',
             verified
               ? 'bg-primary/5 text-primary border-primary/20 hover:bg-primary/10'
               : 'bg-muted text-muted-foreground',
@@ -31,11 +32,11 @@ const BlockchainBadge = ({ hash, verified = true, showFull = false, className }:
           )}
         >
           {verified ? (
-            <CheckCircle2 className="h-3 w-3" />
+            <CheckCircle2 className="h-3 w-3 shrink-0" />
           ) : (
-            <Blocks className="h-3 w-3" />
+            <Blocks className="h-3 w-3 shrink-0" />
           )}
-          {truncatedHash}
+          <span className="truncate">{truncatedHash}</span>
         </Badge>
       </TooltipTrigger>
       <TooltipContent side="bottom" className="max-w-xs">

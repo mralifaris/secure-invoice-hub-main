@@ -17,9 +17,11 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { getAllInvoices, Invoice } from '@/services/mongoService';
+import { useAuth } from '@/context/AuthContext';
 import { Plus, Search, FileText, Eye } from 'lucide-react';
 
 const InvoiceList = () => {
+  const { user, isAdmin } = useAuth();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [filteredInvoices, setFilteredInvoices] = useState<Invoice[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -29,7 +31,9 @@ const InvoiceList = () => {
   useEffect(() => {
     const loadInvoices = async () => {
       try {
-        const data = await getAllInvoices();
+        // Admin sees all, business/user sees only their own
+        const userId = isAdmin ? undefined : user?.uid;
+        const data = await getAllInvoices(userId);
         setInvoices(data);
         setFilteredInvoices(data);
       } catch (error) {
@@ -40,17 +44,15 @@ const InvoiceList = () => {
     };
 
     loadInvoices();
-  }, []);
+  }, [user, isAdmin]);
 
   useEffect(() => {
     let result = invoices;
 
-    // Apply status filter
     if (statusFilter !== 'all') {
       result = result.filter((inv) => inv.status === statusFilter);
     }
 
-    // Apply search filter
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
       result = result.filter(
@@ -97,7 +99,9 @@ const InvoiceList = () => {
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-2xl font-bold text-foreground">Invoices</h1>
-            <p className="text-muted-foreground">Manage and track all your invoices</p>
+            <p className="text-muted-foreground">
+              {isAdmin ? 'All invoices in the system' : 'Your invoices'}
+            </p>
           </div>
           <Link to="/invoices/create">
             <Button className="gap-2">
@@ -138,7 +142,9 @@ const InvoiceList = () => {
         {/* Invoice Table */}
         <Card className="shadow-card">
           <CardHeader>
-            <CardTitle className="text-lg">Invoice History</CardTitle>
+            <CardTitle className="text-lg">
+              {isAdmin ? 'All Invoices' : 'My Invoice History'}
+            </CardTitle>
             <CardDescription>
               {filteredInvoices.length} invoice{filteredInvoices.length !== 1 ? 's' : ''} found
             </CardDescription>
@@ -150,6 +156,7 @@ const InvoiceList = () => {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Invoice</TableHead>
+                      {isAdmin && <TableHead>Created By</TableHead>}
                       <TableHead>Client</TableHead>
                       <TableHead>Amount</TableHead>
                       <TableHead>Status</TableHead>
@@ -165,6 +172,11 @@ const InvoiceList = () => {
                         <TableCell className="font-medium">
                           {invoice.invoiceNumber}
                         </TableCell>
+                        {isAdmin && (
+                          <TableCell className="text-xs text-muted-foreground">
+                            {invoice.createdBy}
+                          </TableCell>
+                        )}
                         <TableCell>
                           <div>
                             <p className="font-medium">{invoice.receiver.name}</p>

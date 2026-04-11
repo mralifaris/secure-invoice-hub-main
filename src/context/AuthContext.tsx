@@ -1,8 +1,8 @@
 /**
  * Authentication Context
- * 
+ *
  * Provides authentication state and methods throughout the application.
- * Uses simulated Firebase service for authentication.
+ * Uses real Firebase Auth service.
  */
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
@@ -13,7 +13,6 @@ import {
   logoutUser,
   getCurrentUser,
   loginAsAdmin as firebaseLoginAsAdmin,
-  isAdmin as checkIsAdmin,
 } from '@/services/firebaseService';
 
 interface AuthContextType {
@@ -34,10 +33,19 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // Check for existing session on mount
-    const currentUser = getCurrentUser();
-    setUser(currentUser);
-    setIsLoading(false);
+    // getCurrentUser is async with real Firebase — must await it
+    const initAuth = async () => {
+      try {
+        const currentUser = await getCurrentUser();
+        setUser(currentUser);
+      } catch {
+        setUser(null);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    initAuth();
   }, []);
 
   const login = async (email: string, password: string) => {
@@ -60,7 +68,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     return { error: result.error };
   };
 
-  const register = async (email: string, password: string, displayName: string, role: User['role'] = 'business') => {
+  const register = async (
+    email: string,
+    password: string,
+    displayName: string,
+    role: User['role'] = 'business'
+  ) => {
     setIsLoading(true);
     const result = await registerUser(email, password, displayName, role);
     if (result.user) {

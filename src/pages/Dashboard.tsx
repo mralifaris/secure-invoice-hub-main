@@ -9,12 +9,12 @@ import { Button } from '@/components/ui/button';
 import { getInvoiceStats, getAllInvoices, Invoice } from '@/services/mongoService';
 import { getBlockchainStats } from '@/services/blockchainService';
 import { getAIServiceStatus } from '@/services/aiService';
+import { useAuth } from '@/context/AuthContext';
 import {
   FileText,
   CheckCircle,
   Clock,
   AlertTriangle,
-  DollarSign,
   Blocks,
   Brain,
   Plus,
@@ -22,6 +22,8 @@ import {
 } from 'lucide-react';
 
 const Dashboard = () => {
+  const { user, isAdmin } = useAuth();
+
   const [stats, setStats] = useState({
     total: 0,
     paid: 0,
@@ -48,9 +50,12 @@ const Dashboard = () => {
   useEffect(() => {
     const loadData = async () => {
       try {
+        // Admin sees all data, business/user sees only their own
+        const userId = isAdmin ? undefined : user?.uid;
+
         const [invoiceStats, invoices, bcStats, aiStatusData] = await Promise.all([
-          getInvoiceStats(),
-          getAllInvoices(),
+          getInvoiceStats(userId),
+          getAllInvoices(userId),
           getBlockchainStats(),
           getAIServiceStatus(),
         ]);
@@ -67,7 +72,7 @@ const Dashboard = () => {
     };
 
     loadData();
-  }, []);
+  }, [user, isAdmin]);
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-US', {
@@ -95,7 +100,9 @@ const Dashboard = () => {
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-2xl font-bold text-foreground">Dashboard</h1>
-            <p className="text-muted-foreground">Overview of your invoicing system</p>
+            <p className="text-muted-foreground">
+              {isAdmin ? 'System-wide overview' : `Welcome, ${user?.displayName}`}
+            </p>
           </div>
           <Link to="/invoices/create">
             <Button className="gap-2">
@@ -108,7 +115,7 @@ const Dashboard = () => {
         {/* Stats Grid */}
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <StatCard
-            title="Total Invoices"
+            title={isAdmin ? 'Total Invoices' : 'My Invoices'}
             value={stats.total}
             icon={<FileText className="h-5 w-5" />}
             variant="primary"
@@ -211,7 +218,9 @@ const Dashboard = () => {
           <CardHeader className="flex flex-row items-center justify-between">
             <div>
               <CardTitle className="text-lg">Recent Invoices</CardTitle>
-              <CardDescription>Latest invoice activity</CardDescription>
+              <CardDescription>
+                {isAdmin ? 'Latest system-wide activity' : 'Your latest invoice activity'}
+              </CardDescription>
             </div>
             <Link to="/invoices">
               <Button variant="ghost" size="sm" className="gap-1">
