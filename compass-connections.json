@@ -1,0 +1,25 @@
+{
+  "type": "Compass Connections",
+  "version": {
+    "$numberInt": "1"
+  },
+  "connections": [
+    {
+      "id": "ae695806-af31-45c7-8b03-0a96da417b15",
+      "lastUsed": {
+        "$date": {
+          "$numberLong": "1775864711397"
+        }
+      },
+      "favorite": {
+        "name": "secure-invoice-hub",
+        "color": "color5"
+      },
+      "savedConnectionType": "recent",
+      "connectionOptions": {
+        "connectionString": "mongodb://localhost:27017/",
+        "oidc": {}
+      }
+    }
+  ]
+}

@@ -9,38 +9,53 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/context/AuthContext';
 import { createInvoice, InvoiceItem } from '@/services/mongoService';
-import { Plus, Trash2, Loader2, FileText, Blocks, Brain } from 'lucide-react';
+import { getUsers } from '@/services/firebaseService';
+import { Plus, Trash2, Loader2, FileText, Blocks, Brain, CheckCircle2, XCircle } from 'lucide-react';
 
 const CreateInvoice = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [receiverStatus, setReceiverStatus] = useState<'idle' | 'checking' | 'found' | 'notfound'>('idle');
+  const [receiverCheckTimeout, setReceiverCheckTimeout] = useState<ReturnType<typeof setTimeout> | null>(null);
 
   const [formData, setFormData] = useState({
-    sender: {
-      name: '',
-      email: '',
-      address: '',
-    },
-    receiver: {
-      name: '',
-      email: '',
-      address: '',
-    },
+    sender: { name: '', email: '', address: '' },
+    receiver: { name: '', email: '', address: '' },
     items: [{ id: '1', description: '', quantity: 1, unitPrice: 0, total: 0 }] as InvoiceItem[],
     taxRate: 10,
     dueDate: '',
     status: 'pending' as const,
   });
 
+  // ─── Check if receiver email exists in our system ─────────────────────────
+  const checkReceiverEmail = (email: string) => {
+    if (receiverCheckTimeout) clearTimeout(receiverCheckTimeout);
+
+    if (!email || !email.includes('@')) {
+      setReceiverStatus('idle');
+      return;
+    }
+
+    setReceiverStatus('checking');
+
+    const timeout = setTimeout(async () => {
+      try {
+        const users = await getUsers();
+        const exists = users.some((u) => u.email.toLowerCase() === email.toLowerCase());
+        setReceiverStatus(exists ? 'found' : 'notfound');
+      } catch {
+        setReceiverStatus('idle');
+      }
+    }, 600); // debounce 600ms
+
+    setReceiverCheckTimeout(timeout);
+  };
+
   const updateItem = (index: number, field: keyof InvoiceItem, value: string | number) => {
     const newItems = [...formData.items];
-    newItems[index] = {
-      ...newItems[index],
-      [field]: value,
-    };
-    // Recalculate total
+    newItems[index] = { ...newItems[index], [field]: value };
     if (field === 'quantity' || field === 'unitPrice') {
       newItems[index].total = newItems[index].quantity * newItems[index].unitPrice;
     }
@@ -59,8 +74,7 @@ const CreateInvoice = () => {
 
   const removeItem = (index: number) => {
     if (formData.items.length > 1) {
-      const newItems = formData.items.filter((_, i) => i !== index);
-      setFormData({ ...formData, items: newItems });
+      setFormData({ ...formData, items: formData.items.filter((_, i) => i !== index) });
     }
   };
 
@@ -70,11 +84,26 @@ const CreateInvoice = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!user) {
+      toast({ title: 'Error', description: 'You must be logged in.', variant: 'destructive' });
+      return;
+    }
+
+    // Block if receiver is not in our system
+    if (receiverStatus === 'notfound') {
       toast({
-        title: 'Error',
-        description: 'You must be logged in to create an invoice.',
+        title: 'Receiver Not Found',
+        description: 'The receiver email is not registered in our system. They must sign up first.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (receiverStatus === 'checking') {
+      toast({
+        title: 'Please wait',
+        description: 'Still verifying receiver email...',
         variant: 'destructive',
       });
       return;
@@ -104,7 +133,7 @@ const CreateInvoice = () => {
           <div className="space-y-1">
             <p>{invoice.invoiceNumber} has been created successfully.</p>
             <p className="text-xs text-muted-foreground">
-              Blockchain hash and AI analysis generated.
+              Receiver will be notified when they log in.
             </p>
           </div>
         ),
@@ -123,10 +152,28 @@ const CreateInvoice = () => {
   };
 
   const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-    }).format(amount);
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
+  };
+
+  // Receiver email status indicator
+  const ReceiverEmailStatus = () => {
+    if (receiverStatus === 'idle') return null;
+    if (receiverStatus === 'checking') return (
+      <p className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
+        <Loader2 className="h-3 w-3 animate-spin" /> Checking...
+      </p>
+    );
+    if (receiverStatus === 'found') return (
+      <p className="flex items-center gap-1 text-xs text-green-600 mt-1">
+        <CheckCircle2 className="h-3 w-3" /> Registered user — invoice will be delivered
+      </p>
+    );
+    if (receiverStatus === 'notfound') return (
+      <p className="flex items-center gap-1 text-xs text-destructive mt-1">
+        <XCircle className="h-3 w-3" /> Not registered in our system
+      </p>
+    );
+    return null;
   };
 
   return (
@@ -152,12 +199,7 @@ const CreateInvoice = () => {
                   <Input
                     id="senderName"
                     value={formData.sender.name}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        sender: { ...formData.sender, name: e.target.value },
-                      })
-                    }
+                    onChange={(e) => setFormData({ ...formData, sender: { ...formData.sender, name: e.target.value } })}
                     placeholder="Your Company Ltd"
                     required
                   />
@@ -168,12 +210,7 @@ const CreateInvoice = () => {
                     id="senderEmail"
                     type="email"
                     value={formData.sender.email}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        sender: { ...formData.sender, email: e.target.value },
-                      })
-                    }
+                    onChange={(e) => setFormData({ ...formData, sender: { ...formData.sender, email: e.target.value } })}
                     placeholder="billing@yourcompany.com"
                     required
                   />
@@ -183,12 +220,7 @@ const CreateInvoice = () => {
                   <Input
                     id="senderAddress"
                     value={formData.sender.address}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        sender: { ...formData.sender, address: e.target.value },
-                      })
-                    }
+                    onChange={(e) => setFormData({ ...formData, sender: { ...formData.sender, address: e.target.value } })}
                     placeholder="123 Business St, City, Country"
                     required
                   />
@@ -200,7 +232,7 @@ const CreateInvoice = () => {
             <Card className="shadow-card">
               <CardHeader>
                 <CardTitle className="text-lg">To (Receiver)</CardTitle>
-                <CardDescription>Client details</CardDescription>
+                <CardDescription>Client details — must be registered in our system</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
@@ -208,12 +240,7 @@ const CreateInvoice = () => {
                   <Input
                     id="receiverName"
                     value={formData.receiver.name}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        receiver: { ...formData.receiver, name: e.target.value },
-                      })
-                    }
+                    onChange={(e) => setFormData({ ...formData, receiver: { ...formData.receiver, name: e.target.value } })}
                     placeholder="Client Company Inc"
                     required
                   />
@@ -224,27 +251,28 @@ const CreateInvoice = () => {
                     id="receiverEmail"
                     type="email"
                     value={formData.receiver.email}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        receiver: { ...formData.receiver, email: e.target.value },
-                      })
-                    }
+                    onChange={(e) => {
+                      setFormData({ ...formData, receiver: { ...formData.receiver, email: e.target.value } });
+                      checkReceiverEmail(e.target.value);
+                    }}
                     placeholder="accounts@client.com"
+                    className={
+                      receiverStatus === 'found'
+                        ? 'border-green-500 focus-visible:ring-green-500'
+                        : receiverStatus === 'notfound'
+                        ? 'border-destructive focus-visible:ring-destructive'
+                        : ''
+                    }
                     required
                   />
+                  <ReceiverEmailStatus />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="receiverAddress">Address</Label>
                   <Input
                     id="receiverAddress"
                     value={formData.receiver.address}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        receiver: { ...formData.receiver, address: e.target.value },
-                      })
-                    }
+                    onChange={(e) => setFormData({ ...formData, receiver: { ...formData.receiver, address: e.target.value } })}
                     placeholder="456 Client Ave, City, Country"
                     required
                   />
@@ -308,7 +336,6 @@ const CreateInvoice = () => {
                   </Button>
                 </div>
               ))}
-
               <Button type="button" variant="outline" onClick={addItem} className="gap-2">
                 <Plus className="h-4 w-4" />
                 Add Item
@@ -319,9 +346,7 @@ const CreateInvoice = () => {
           {/* Summary & Options */}
           <div className="grid gap-6 md:grid-cols-2">
             <Card className="shadow-card">
-              <CardHeader>
-                <CardTitle className="text-lg">Invoice Options</CardTitle>
-              </CardHeader>
+              <CardHeader><CardTitle className="text-lg">Invoice Options</CardTitle></CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="dueDate">Due Date</Label>
@@ -341,22 +366,16 @@ const CreateInvoice = () => {
                     min="0"
                     max="100"
                     value={formData.taxRate}
-                    onChange={(e) =>
-                      setFormData({ ...formData, taxRate: parseFloat(e.target.value) || 0 })
-                    }
+                    onChange={(e) => setFormData({ ...formData, taxRate: parseFloat(e.target.value) || 0 })}
                   />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="status">Status</Label>
                   <Select
                     value={formData.status}
-                    onValueChange={(value) =>
-                      setFormData({ ...formData, status: value as typeof formData.status })
-                    }
+                    onValueChange={(value) => setFormData({ ...formData, status: value as typeof formData.status })}
                   >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="draft">Draft</SelectItem>
                       <SelectItem value="pending">Pending</SelectItem>
@@ -368,9 +387,7 @@ const CreateInvoice = () => {
             </Card>
 
             <Card className="shadow-card">
-              <CardHeader>
-                <CardTitle className="text-lg">Summary</CardTitle>
-              </CardHeader>
+              <CardHeader><CardTitle className="text-lg">Summary</CardTitle></CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Subtotal</span>
@@ -386,7 +403,6 @@ const CreateInvoice = () => {
                     <span>{formatCurrency(total)}</span>
                   </div>
                 </div>
-
                 <div className="space-y-2 rounded-lg bg-accent/50 p-3 text-sm">
                   <div className="flex items-center gap-2 text-muted-foreground">
                     <Blocks className="h-4 w-4" />
@@ -403,20 +419,16 @@ const CreateInvoice = () => {
 
           {/* Submit */}
           <div className="flex justify-end gap-4">
-            <Button type="button" variant="outline" onClick={() => navigate('/invoices')}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={isSubmitting} className="gap-2">
+            <Button type="button" variant="outline" onClick={() => navigate('/invoices')}>Cancel</Button>
+            <Button
+              type="submit"
+              disabled={isSubmitting || receiverStatus === 'notfound' || receiverStatus === 'checking'}
+              className="gap-2"
+            >
               {isSubmitting ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Creating...
-                </>
+                <><Loader2 className="h-4 w-4 animate-spin" />Creating...</>
               ) : (
-                <>
-                  <FileText className="h-4 w-4" />
-                  Create Invoice
-                </>
+                <><FileText className="h-4 w-4" />Create Invoice</>
               )}
             </Button>
           </div>
