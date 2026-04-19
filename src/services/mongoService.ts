@@ -3,16 +3,6 @@
  *
  * MONGODB ONLY — all calls go to Express API (localhost:3001)
  * which connects to MongoDB at localhost:27017
- *
- * Exports:
- *   - Invoice (type)
- *   - InvoiceItem (type)
- *   - getAllInvoices
- *   - getInvoiceById
- *   - getInvoiceStats
- *   - createInvoice
- *   - updateInvoiceStatus
- *   - deleteInvoice
  */
 
 import { generateBlockchainHash } from './blockchainService';
@@ -87,10 +77,18 @@ const apiDelete = async (path: string): Promise<any> => {
 };
 
 // ─── GET ALL INVOICES ─────────────────────────────────────────────────────────
+// Fetches invoices where user is sender (userId) OR receiver (receiverEmail)
+// Admin: no filters → sees all
 
-export const getAllInvoices = async (userId?: string): Promise<Invoice[]> => {
-  const path = userId ? `/invoices?userId=${userId}` : '/invoices';
-  return apiGet(path);
+export const getAllInvoices = async (
+  userId?: string,
+  receiverEmail?: string
+): Promise<Invoice[]> => {
+  const params = new URLSearchParams();
+  if (userId) params.append('userId', userId);
+  if (receiverEmail) params.append('receiverEmail', receiverEmail);
+  const query = params.toString();
+  return apiGet(`/invoices${query ? `?${query}` : ''}`);
 };
 
 // ─── GET INVOICE BY ID ────────────────────────────────────────────────────────
@@ -104,9 +102,11 @@ export const getInvoiceById = async (id: string): Promise<Invoice | null> => {
 };
 
 // ─── GET INVOICE STATS ────────────────────────────────────────────────────────
-// userId = undefined → admin sees all, userId = uid → user sees their own
 
-export const getInvoiceStats = async (userId?: string): Promise<{
+export const getInvoiceStats = async (
+  userId?: string,
+  receiverEmail?: string
+): Promise<{
   total: number;
   paid: number;
   pending: number;
@@ -115,8 +115,7 @@ export const getInvoiceStats = async (userId?: string): Promise<{
   pendingRevenue: number;
 }> => {
   try {
-    // Always compute from filtered invoices to respect userId scope
-    const invoices = await getAllInvoices(userId);
+    const invoices = await getAllInvoices(userId, receiverEmail);
     return {
       total: invoices.length,
       paid: invoices.filter((i) => i.status === 'paid').length,
@@ -130,10 +129,7 @@ export const getInvoiceStats = async (userId?: string): Promise<{
         .reduce((sum, i) => sum + i.total, 0),
     };
   } catch {
-    return {
-      total: 0, paid: 0, pending: 0, overdue: 0,
-      totalRevenue: 0, pendingRevenue: 0,
-    };
+    return { total: 0, paid: 0, pending: 0, overdue: 0, totalRevenue: 0, pendingRevenue: 0 };
   }
 };
 

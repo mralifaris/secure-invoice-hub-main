@@ -8,13 +8,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Badge } from '@/components/ui/badge';
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import { getAllInvoices, Invoice } from '@/services/mongoService';
 import { useAuth } from '@/context/AuthContext';
@@ -31,9 +27,14 @@ const InvoiceList = () => {
   useEffect(() => {
     const loadInvoices = async () => {
       try {
-        // Admin sees all, business/user sees only their own
-        const userId = isAdmin ? undefined : user?.uid;
-        const data = await getAllInvoices(userId);
+        let data: Invoice[];
+        if (isAdmin) {
+          // Admin sees everything
+          data = await getAllInvoices();
+        } else {
+          // Non-admin sees invoices they sent OR received
+          data = await getAllInvoices(user?.uid, user?.email);
+        }
         setInvoices(data);
         setFilteredInvoices(data);
       } catch (error) {
@@ -66,20 +67,18 @@ const InvoiceList = () => {
     setFilteredInvoices(result);
   }, [invoices, searchTerm, statusFilter]);
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      minimumFractionDigits: 0,
-    }).format(amount);
-  };
+  const formatCurrency = (amount: number) =>
+    new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0 }).format(amount);
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-    });
+  const formatDate = (dateString: string) =>
+    new Date(dateString).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+
+  // Tell the user if they are the sender or receiver of each invoice
+  const getRole = (invoice: Invoice) => {
+    if (!user) return null;
+    if (invoice.createdBy === user.uid) return 'sent';
+    if (invoice.receiver.email.toLowerCase() === user.email.toLowerCase()) return 'received';
+    return null;
   };
 
   if (isLoading) {
@@ -100,7 +99,7 @@ const InvoiceList = () => {
           <div>
             <h1 className="text-2xl font-bold text-foreground">Invoices</h1>
             <p className="text-muted-foreground">
-              {isAdmin ? 'All invoices in the system' : 'Your invoices'}
+              {isAdmin ? 'All invoices in the system' : 'Invoices you sent or received'}
             </p>
           </div>
           <Link to="/invoices/create">
@@ -156,6 +155,7 @@ const InvoiceList = () => {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Invoice</TableHead>
+                      {!isAdmin && <TableHead>Role</TableHead>}
                       {isAdmin && <TableHead>Created By</TableHead>}
                       <TableHead>Client</TableHead>
                       <TableHead>Amount</TableHead>
@@ -169,34 +169,41 @@ const InvoiceList = () => {
                   <TableBody>
                     {filteredInvoices.map((invoice) => (
                       <TableRow key={invoice.id}>
-                        <TableCell className="font-medium">
-                          {invoice.invoiceNumber}
-                        </TableCell>
+                        <TableCell className="font-medium">{invoice.invoiceNumber}</TableCell>
+
+                        {/* Role badge for non-admin */}
+                        {!isAdmin && (
+                          <TableCell>
+                            <Badge
+                              variant="outline"
+                              className={
+                                getRole(invoice) === 'sent'
+                                  ? 'text-blue-600 border-blue-300'
+                                  : 'text-green-600 border-green-300'
+                              }
+                            >
+                              {getRole(invoice) === 'sent' ? 'Sent' : 'Received'}
+                            </Badge>
+                          </TableCell>
+                        )}
+
+                        {/* Created by for admin */}
                         {isAdmin && (
                           <TableCell className="text-xs text-muted-foreground">
                             {invoice.createdBy}
                           </TableCell>
                         )}
+
                         <TableCell>
                           <div>
                             <p className="font-medium">{invoice.receiver.name}</p>
-                            <p className="text-xs text-muted-foreground">
-                              {invoice.receiver.email}
-                            </p>
+                            <p className="text-xs text-muted-foreground">{invoice.receiver.email}</p>
                           </div>
                         </TableCell>
-                        <TableCell className="font-semibold">
-                          {formatCurrency(invoice.total)}
-                        </TableCell>
-                        <TableCell>
-                          <InvoiceStatusBadge status={invoice.status} />
-                        </TableCell>
-                        <TableCell>
-                          <RiskBadge risk={invoice.aiAnalysis.fraudRisk} />
-                        </TableCell>
-                        <TableCell>
-                          <BlockchainBadge hash={invoice.blockchainHash} />
-                        </TableCell>
+                        <TableCell className="font-semibold">{formatCurrency(invoice.total)}</TableCell>
+                        <TableCell><InvoiceStatusBadge status={invoice.status} /></TableCell>
+                        <TableCell><RiskBadge risk={invoice.aiAnalysis.fraudRisk} /></TableCell>
+                        <TableCell><BlockchainBadge hash={invoice.blockchainHash} /></TableCell>
                         <TableCell>{formatDate(invoice.dueDate)}</TableCell>
                         <TableCell className="text-right">
                           <Link to={`/invoices/${invoice.id}`}>

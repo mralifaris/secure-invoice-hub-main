@@ -1,11 +1,30 @@
 const express = require('express');
 const router = express.Router();
-const { Invoice, Transaction, Log } = require('../models');
+const { Invoice, Transaction } = require('../models');
 
-// GET all invoices (optional ?userId= filter)
+// GET all invoices
+// ?userId=        → invoices created by this user (sender)
+// ?receiverEmail= → invoices received by this email
+// both together   → union of sent + received
 router.get('/', async (req, res) => {
   try {
-    const filter = req.query.userId ? { createdBy: req.query.userId } : {};
+    const { userId, receiverEmail } = req.query;
+
+    let filter = {};
+
+    if (userId && receiverEmail) {
+      filter = {
+        $or: [
+          { createdBy: userId },
+          { 'receiver.email': { $regex: new RegExp(`^${receiverEmail}$`, 'i') } },
+        ],
+      };
+    } else if (userId) {
+      filter = { createdBy: userId };
+    } else if (receiverEmail) {
+      filter = { 'receiver.email': { $regex: new RegExp(`^${receiverEmail}$`, 'i') } };
+    }
+
     const invoices = await Invoice.find(filter, '-__v').sort({ createdAt: -1 });
     res.json(invoices);
   } catch (err) {
@@ -30,7 +49,6 @@ router.post('/', async (req, res) => {
     const invoice = new Invoice(req.body);
     await invoice.save();
 
-    // Auto-log transaction
     await Transaction.create({
       invoiceId: invoice.id,
       userId: invoice.createdBy,
@@ -58,7 +76,6 @@ router.patch('/:id/status', async (req, res) => {
     invoice.updatedAt = new Date().toISOString();
     await invoice.save();
 
-    // Auto-log transaction
     if (userId) {
       await Transaction.create({
         invoiceId: invoice.id,
@@ -83,7 +100,6 @@ router.delete('/:id', async (req, res) => {
     const result = await Invoice.findOneAndDelete({ id: req.params.id });
     if (!result) return res.status(404).json({ error: 'Invoice not found' });
 
-    // Log deletion
     if (req.query.userId) {
       await Transaction.create({
         invoiceId: req.params.id,
